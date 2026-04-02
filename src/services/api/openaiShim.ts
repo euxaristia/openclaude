@@ -231,40 +231,58 @@ function convertMessages(
  * which causes 400 errors on OpenAI/Codex endpoints. This normalizes the
  * schema by ensuring `required` is a superset of `properties` keys.
  */
-function normalizeSchemaForOpenAI(schema: Record<string, unknown>): Record<string, unknown> {
+function normalizeSchemaForOpenAI(
+  schema: Record<string, unknown>,
+  strict = true,
+): Record<string, unknown> {
   if (schema.type !== 'object' || !schema.properties) return schema
   const properties = schema.properties as Record<string, unknown>
   const existingRequired = Array.isArray(schema.required) ? schema.required as string[] : []
-  const allKeys = Object.keys(properties)
-  const required = Array.from(new Set([...existingRequired, ...allKeys]))
+  // OpenAI strict mode requires every property to be listed in required[].
+  // Gemini rejects schemas where required[] contains keys absent from properties,
+  // so only promote keys that actually exist in properties.
+  if (strict) {
+    const allKeys = Object.keys(properties)
+    const required = Array.from(new Set([...existingRequired, ...allKeys]))
+    return { ...schema, required }
+  }
+  // For Gemini: keep only existing required keys that are present in properties
+  const required = existingRequired.filter(k => k in properties)
   return { ...schema, required }
 }
 
 function convertTools(
   tools: Array<{ name: string; description?: string; input_schema?: Record<string, unknown> }>,
 ): OpenAITool[] {
+  const isGemini =
+    process.env.CLAUDE_CODE_USE_GEMINI === '1' ||
+    process.env.CLAUDE_CODE_USE_GEMINI === 'true'
+
   return tools
-      .filter(t => t.name !== 'ToolSearchTool') // Not relevant for OpenAI
-  .map(t => {
-    // Estraiamo lo schema
-    const schema = (t.input_schema ?? { type: 'object', properties: {} }) as any;
+    .filter(t => t.name !== 'ToolSearchTool') // Not relevant for OpenAI
+    .map(t => {
+      const schema = { ...(t.input_schema ?? { type: 'object', properties: {} }) } as Record<string, unknown>
 
-    // PATCH PER CODEX: Se è lo strumento Agent, forziamo i campi obbligatori
-    if (t.name === 'Agent' && schema.properties) {
-      if (!schema.required) schema.required = [];
-      if (!schema.required.includes('message')) schema.required.push('message');
-      if (!schema.required.includes('subagent_type')) schema.required.push('subagent_type');
-    }
+      // For Codex/OpenAI: promote known Agent sub-fields into required[] only if
+      // they actually exist in properties (Gemini rejects required keys absent from properties).
+      if (t.name === 'Agent' && schema.properties) {
+        const props = schema.properties as Record<string, unknown>
+        if (!Array.isArray(schema.required)) schema.required = []
+        const req = schema.required as string[]
+        for (const key of ['message', 'subagent_type']) {
+          if (key in props && !req.includes(key)) req.push(key)
+        }
+      }
 
-    return {
-      type: 'function' as const,
-      function: {
-        name: t.name,
-        description: t.description ?? '',
-        parameters: normalizeSchemaForOpenAI(schema),
-      },
-    }
-  })
+      return {
+        type: 'function' as const,
+        function: {
+          name: t.name,
+          description: t.description ?? '',
+          parameters: normalizeSchemaForOpenAI(schema, !isGemini),
+        },
+      }
+    })
 }
 
 // ---------------------------------------------------------------------------
