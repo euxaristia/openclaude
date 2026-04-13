@@ -492,9 +492,13 @@ export function getPublicModelDisplayName(model: ModelName): string | null {
       return copilotModelNames[model]
     }
 
-    // Return display names for known Qwen models
+    // Return display names for known Qwen models - format to match GitHub username style
     if (model.startsWith('qwen')) {
-      // Capitalize 'qwen' to 'Qwen' and return as-is (e.g., 'qwen3-coder-plus' -> 'Qwen3-coder-plus')
+      // Convert to match GitHub username style (e.g., 'qwen3-coder-plus' -> 'QwenCoder')
+      if (model.includes('coder')) {
+        return 'QwenCoder'
+      }
+      // For other qwen models, capitalize first letter (e.g., 'qwen3' -> 'Qwen3')
       return model.charAt(0).toUpperCase() + model.slice(1)
     }
 
