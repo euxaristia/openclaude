@@ -88,7 +88,7 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
     specifiedModel =
       (provider === 'gemini' ? process.env.GEMINI_MODEL : undefined) ||
       (provider === 'mistral' ? process.env.MISTRAL_MODEL : undefined) ||
-      (provider === 'openai' || provider === 'gemini' || provider === 'mistral' || provider === 'github' ? process.env.OPENAI_MODEL : undefined) ||
+      (provider === 'openai' || provider === 'gemini' || provider === 'mistral' || provider === 'github' || provider === 'qwen' ? process.env.OPENAI_MODEL : undefined) ||
       (provider === 'firstParty' ? process.env.ANTHROPIC_MODEL : undefined) ||
       settings.model ||
       undefined
@@ -272,6 +272,10 @@ export function getDefaultMainLoopModelSetting(): ModelName | ModelAlias {
   }
   if (getAPIProvider() === 'mistral') {
     return process.env.MISTRAL_MODEL || 'devstral-latest'
+  }
+  // Qwen provider: always use the configured Qwen model
+  if (getAPIProvider() === 'qwen') {
+    return process.env.OPENAI_MODEL || 'qwen3-coder-plus'
   }
   // OpenAI provider: always use the configured OpenAI model
   if (getAPIProvider() === 'openai') {
