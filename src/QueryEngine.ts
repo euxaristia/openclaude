@@ -34,6 +34,7 @@ import type { CanUseToolFn } from './hooks/useCanUseTool.js'
 import { loadMemoryPrompt } from './memdir/memdir.js'
 import { hasAutoMemPathOverride } from './memdir/paths.js'
 import { query as defaultQuery } from './query.js'
+import { runViaCairnKernel } from './services/engines/cairnKernel.js'
 import { categorizeRetryableAPIError } from './services/api/errors.js'
 import type { AutoCompactTrackingState } from './services/compact/autoCompact.js'
 import { toSDKGoalStatusMessage } from './services/goal/sdk.js'
@@ -751,7 +752,11 @@ export class QueryEngine {
       ? countToolCalls(this.mutableMessages, SYNTHETIC_OUTPUT_TOOL_NAME)
       : 0
 
-    const runQuery = this.config.query ?? defaultQuery
+    const runQuery =
+      this.config.query ??
+      (getGlobalConfig().engine === 'cairn-kernel'
+        ? runViaCairnKernel
+        : defaultQuery)
     for await (const message of runQuery({
       messages,
       systemPrompt,

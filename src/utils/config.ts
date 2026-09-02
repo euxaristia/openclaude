@@ -702,6 +702,13 @@ export type GlobalConfig = {
   // Use a different (e.g. cheaper/faster) model for compaction.
   // Defaults to mainLoopModel when unset.
   compactModel?: string
+
+  // Query loop implementation. `cairn-kernel` spawns the compiled ACP binary
+  // and drives it over stdio instead of the Node query loop.
+  engine?: 'default' | 'cairn-kernel'
+  // Absolute path to the compiled cairn-kernel binary. Falls back to
+  // CAIRN_KERNEL_PATH, then `cairn-kernel` on PATH.
+  cairnKernelPath?: string
 }
 
 /**
@@ -814,6 +821,8 @@ export const GLOBAL_CONFIG_KEYS = [
   'logoColor',
   'maxMessagesCompactionThreshold',
   'compactModel',
+  'engine',
+  'cairnKernelPath',
 ] as const
 
 export type GlobalConfigKey = (typeof GLOBAL_CONFIG_KEYS)[number]
