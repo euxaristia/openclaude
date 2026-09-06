@@ -67,6 +67,8 @@ const envKeys = [
   'ANTHROPIC_MODEL',
   'ANTHROPIC_SMALL_FAST_MODEL',
   'CLAUDE_CODE_ALWAYS_ENABLE_EFFORT',
+  'CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING',
+  'CLAUDE_CODE_EFFORT_LEVEL',
   'ANTHROPIC_UNIX_SOCKET',
   'CLAUDE_CODE_ATTRIBUTION_HEADER',
   'CLAUDE_CODE_ENTRYPOINT',
@@ -396,10 +398,14 @@ function makeOptions(
 async function capturePrimaryRequest({
   model = 'claude-lifecycle-test',
   systemPrompt = asSystemPrompt(['stable system prompt']),
+  thinkingConfig = { type: 'disabled' },
+  effortValue,
 }: {
   model?: string
   systemPrompt?: ReturnType<typeof asSystemPrompt>
-} = {}): Promise<{ system: unknown[]; headers: Headers }> {
+  thinkingConfig?: Parameters<ClaudeModule['queryModelWithStreaming']>[0]['thinkingConfig']
+  effortValue?: Options['effortValue']
+} = {}) {
   const queryLifecycle = new QueryLifecycleOperationTracker()
   let requestBody: Record<string, unknown> | undefined
   let requestHeaders: Headers | undefined
@@ -419,12 +425,13 @@ async function capturePrimaryRequest({
       } as Message,
     ],
     systemPrompt,
-    thinkingConfig: { type: 'disabled' },
+    thinkingConfig,
     tools: [],
     signal: new AbortController().signal,
     options: {
       ...makeOptions(queryLifecycle),
       model,
+      effortValue,
       fetchOverride,
     },
   })
@@ -438,7 +445,7 @@ async function capturePrimaryRequest({
   if (!requestHeaders) {
     throw new Error('expected captured Anthropic request headers')
   }
-  return { system: requestBody.system, headers: requestHeaders }
+  return { system: requestBody.system, headers: requestHeaders, body: requestBody }
 }
 
 async function capturePrimarySystemBlocks(options: {
@@ -555,6 +562,57 @@ const describeLifecycle = runInProviderIsolatedChild
   : describe
 
 describeLifecycle('Claude API lifecycle tracking', () => {
+  for (const effortValue of ['xhigh', 'max'] as const) {
+    for (const disableMode of ['explicit', 'global', 'budget'] as const) {
+      test(`caps disabled Opus 5 ${effortValue} effort (${disableMode})`, async () => {
+        setClientTestEnv()
+        if (disableMode === 'global') {
+          process.env.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = '1'
+        }
+        const { body } = await capturePrimaryRequest({
+          model: 'claude-opus-5',
+          effortValue,
+          thinkingConfig: disableMode === 'explicit'
+            ? { type: 'disabled' }
+            : disableMode === 'budget'
+              ? { type: 'enabled', budgetTokens: 1024 }
+              : { type: 'adaptive' },
+        })
+        expect(body.thinking).toEqual({ type: 'disabled' })
+        expect(body).toHaveProperty('output_config.effort', 'high')
+      })
+    }
+
+    test(`preserves adaptive Opus 5 ${effortValue} effort`, async () => {
+      setClientTestEnv()
+      const { body } = await capturePrimaryRequest({
+        model: 'claude-opus-5',
+        effortValue,
+        thinkingConfig: { type: 'adaptive' },
+      })
+      expect(body.thinking).toEqual({ type: 'adaptive' })
+      expect(body).toHaveProperty('output_config.effort', effortValue)
+    })
+  }
+
+  for (const effortValue of ['low', 'medium', 'high'] as const) {
+    test(`preserves disabled Opus 5 ${effortValue} effort`, async () => {
+      setClientTestEnv()
+      const { body } = await capturePrimaryRequest({ model: 'claude-opus-5', effortValue })
+      expect(body.thinking).toEqual({ type: 'disabled' })
+      expect(body).toHaveProperty('output_config.effort', effortValue)
+    })
+  }
+
+  for (const model of ['claude-sonnet-5', 'claude-opus-4-6']) {
+    test(`preserves disabled ${model} max effort`, async () => {
+      setClientTestEnv()
+      const { body } = await capturePrimaryRequest({ model, effortValue: 'max' })
+      expect(body).toHaveProperty('output_config.effort', 'max')
+      expect(body.thinking).toEqual(model === 'claude-sonnet-5' ? { type: 'disabled' } : undefined)
+    })
+  }
+
   for (const [label, envKey, envValue, ambientAuth] of [
     ['remote', 'CLAUDE_CODE_REMOTE', '1', 'api-key'],
     [

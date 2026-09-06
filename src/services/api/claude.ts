@@ -204,6 +204,7 @@ import {
 } from 'src/utils/thinking.js'
 import {
   isClaude5ModelId,
+  isOpus5ModelId,
   isSonnet5ModelId,
 } from 'src/utils/model/modelIdMatch.js'
 import {
@@ -1819,6 +1820,14 @@ async function* queryModel(
           type: 'enabled',
         } satisfies BetaMessageStreamParams['thinking']
       }
+    }
+
+    if (
+      isOpus5ModelId(retryContext.model) &&
+      thinking?.type === 'disabled' &&
+      (outputConfig.effort === 'xhigh' || outputConfig.effort === 'max')
+    ) {
+      outputConfig.effort = 'high'
     }
 
     const isThinkingActive = thinking?.type === 'adaptive' || thinking?.type === 'enabled'
